@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# codemap: one-call, read-only map of project files, grouped by directory,
+# optionally with the top-level symbols of each file. Always computed fresh.
+# Portable: bash 3.2+, POSIX awk; uses rg, then git, then find to list files.
+set -u
+
+usage() {
+  cat <<'EOF'
+Usage: codemap [--ext php,js,css] [--dir PATH] [--symbols] [--max N] [--exclude REGEX]...
+
+  --ext      comma-separated extensions to include (default: every file)
+  --dir      directory to map (default: current directory)
+  --symbols  list classes / functions / exports per file
+             (php, js/ts, py, go, css/scss/less custom properties and mixins)
+  --max      cap on output lines (default 300); a hint is printed when cut
+  --exclude  extended regex matched against the relative path; repeatable
+
+Always skipped: .git node_modules vendor dist build out coverage .next .nuxt
+.svelte-kit target __pycache__ .venv venv, minified files and source maps.
+EOF
+}
+
+exts=""
+dir="."
+symbols=0
+max=300
+excludes=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --ext) exts="${2:-}"; shift 2 ;;
+    --ext=*) exts="${1#*=}"; shift ;;
+    --dir) dir="${2:-.}"; shift 2 ;;
+    --dir=*) dir="${1#*=}"; shift ;;
+    --symbols) symbols=1; shift ;;
+    --max) max="${2:-300}"; shift 2 ;;
+    --max=*) max="${1#*=}"; shift ;;
+    --exclude) excludes="${excludes:+$excludes|}(${2:-})"; shift 2 ;;
+    --exclude=*) excludes="${excludes:+$excludes|}(${1#*=})"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "codemap: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+case "$max" in ''|*[!0-9]*) echo "codemap: --max must be a number" >&2; exit 2 ;; esac
+if [ ! -d "$dir" ]; then
+  echo "codemap: no such directory: $dir" >&2
+  exit 2
+fi
+cd "$dir" || exit 2
+
+# List candidate files relative to $dir, honouring .gitignore where possible.
+if command -v rg >/dev/null 2>&1; then
+  source_tool="rg"
+  list_files() { rg --files --hidden -g '!.git' 2>/dev/null; }
+elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  source_tool="git"
+  list_files() { git ls-files --cached --others --exclude-standard 2>/dev/null; }
+else
+  source_tool="find"
+  list_files() { find . -type f 2>/dev/null | sed 's|^\./||'; }
+fi
+
+skip_dirs='(^|/)(\.git|node_modules|vendor|dist|build|out|coverage|\.next|\.nuxt|\.svelte-kit|target|__pycache__|\.venv|venv)/'
+skip_files='\.min\.[A-Za-z0-9]+$|\.map$'
+
+ext_filter='.'
+if [ -n "$exts" ]; then
+  ext_filter="\\.($(printf '%s' "$exts" | sed 's/^\.//; s/,[[:space:]]*\.\{0,1\}/|/g'))$"
+fi
+
+tmp="$(mktemp "${TMPDIR:-/tmp}/codemap.XXXXXX")" || exit 1
+out="$(mktemp "${TMPDIR:-/tmp}/codemap.XXXXXX")" || exit 1
+trap 'rm -f "$tmp" "$tmp.sym" "$tmp.sym0" "$out"' EXIT
+
+list_files \
+  | grep -E -i -- "$ext_filter" \
+  | grep -E -v -- "$skip_dirs" \
+  | grep -E -v -- "$skip_files" \
+  | { if [ -n "$excludes" ]; then grep -E -v -- "$excludes"; else cat; fi; } \
+  | LC_ALL=C sort > "$tmp"
+
+total=$(wc -l < "$tmp" | tr -d ' ')
+if [ "$total" -eq 0 ]; then
+  echo "# codemap: no files matched (dir: $dir, ext: ${exts:-any}, via $source_tool)"
+  exit 0
+fi
+
+# Per-file symbol summary: "path<TAB>summary". One awk pass over all files.
+symbols_awk='
+function flush() {
+  if (file == "") return
+  s = ""
+  for (i = 1; i <= n && i <= 15; i++) s = s (i > 1 ? ", " : "") sym[i]
+  if (n > 15) s = s ", +" (n - 15)
+  if (props > 0) s = s (s != "" ? "; " : "") props " custom properties"
+  print file "\t" s
+}
+function add(kind, name) {
+  if (name == "" || seen[kind " " name]++) return
+  sym[++n] = kind " " name
+}
+# re is a dynamic regex string: a /literal/ argument would be evaluated as $0 ~ /literal/
+function word_after(line, re,    rest) {
+  if (!match(line, re)) return ""
+  rest = substr(line, RSTART + RLENGTH)
+  sub(/^[[:space:]]+/, "", rest)
+  if (match(rest, /^[A-Za-z_$][A-Za-z0-9_$-]*/)) return substr(rest, 1, RLENGTH)
+  return ""
+}
+FNR == 1 {
+  flush()
+  file = FILENAME; n = 0; props = 0
+  split("", sym); split("", seen)
+  lang = tolower(FILENAME); sub(/^.*\./, "", lang)
+}
+lang == "php" {
+  if ($0 ~ /^[[:space:]]*((abstract|final|readonly)[[:space:]]+)*(class|interface|trait|enum)[[:space:]]/)
+    add("class", word_after($0, "(class|interface|trait|enum)[[:space:]]"))
+  else if ($0 ~ /^[[:space:]]*((public|protected|private|static|abstract|final)[[:space:]]+)*function[[:space:]]/)
+    add("fn", word_after($0, "function[[:space:]]+&?"))
+  next
+}
+lang ~ /^(js|jsx|ts|tsx|mjs|cjs|mts|cts)$/ {
+  if ($0 ~ /^export[[:space:]*{]/) {
+    name = word_after($0, "^export[[:space:]]+(default[[:space:]]+)?(declare[[:space:]]+)?(abstract[[:space:]]+)?(async[[:space:]]+)?(function\\*?|class|const|let|var|interface|type|enum)[[:space:]]+")
+    if (name != "") add("export", name)
+    else if ($0 ~ /^export[[:space:]]+default/) add("export", "default")
+    else add("export", "{...}")
+  }
+  next
+}
+lang == "py" {
+  if ($0 ~ /^class[[:space:]]/) add("class", word_after($0, "^class[[:space:]]+"))
+  else if ($0 ~ /^(async[[:space:]]+)?def[[:space:]]/) add("def", word_after($0, "def[[:space:]]+"))
+  next
+}
+lang == "go" {
+  if ($0 ~ /^type[[:space:]]/) add("type", word_after($0, "^type[[:space:]]+"))
+  else if ($0 ~ /^func[[:space:]]/) {
+    line = $0; sub(/^func[[:space:]]+(\([^)]*\)[[:space:]]*)?/, "", line)
+    if (match(line, /^[A-Za-z_][A-Za-z0-9_]*/)) add("func", substr(line, 1, RLENGTH))
+  }
+  next
+}
+lang ~ /^(css|scss|sass|less)$/ {
+  if ($0 ~ /^[[:space:]]*--[A-Za-z0-9_-]+[[:space:]]*:/) props++
+  else if ($0 ~ /^[[:space:]]*@(mixin|function)[[:space:]]/) add("mixin", word_after($0, "@(mixin|function)[[:space:]]+"))
+  next
+}
+END { flush() }
+'
+
+if [ "$symbols" -eq 1 ]; then
+  # awk skips unreadable files on its own; tr+xargs keeps paths with spaces intact
+  # empty files never reach FNR == 1, so join the summaries back onto the full list
+  tr '\n' '\0' < "$tmp" | xargs -0 awk "$symbols_awk" 2>/dev/null > "$tmp.sym0"
+  awk -F'\t' 'NR == FNR { s[$1] = $2; next } { print $0 "\t" s[$0] }' "$tmp.sym0" "$tmp" > "$tmp.sym"
+  rm -f "$tmp.sym0"
+else
+  awk '{ print $0 "\t" }' "$tmp" > "$tmp.sym"
+fi
+
+dirs=$(awk -F'\t' '{ d = $1; if (d ~ /\//) sub(/\/[^\/]*$/, "", d); else d = "."; print d }' "$tmp.sym" | LC_ALL=C sort -u | wc -l | tr -d ' ')
+{
+  echo "# codemap: $total files in $dirs dirs (dir: $dir, ext: ${exts:-any}, via $source_tool)"
+  awk -F'\t' -v per_dir=50 '
+    {
+      path = $1; d = path; base = path
+      if (d ~ /\//) { sub(/\/[^\/]*$/, "", d); sub(/^.*\//, "", base) } else d = "."
+      if (d != cur) {
+        if (hidden > 0) print "  ... +" hidden " more (run with --dir " cur ")"
+        cur = d; shown = 0; hidden = 0
+        print d "/"
+      }
+      if (shown < per_dir) { print "  " base ($2 != "" ? ": " $2 : ""); shown++ } else hidden++
+    }
+    END { if (hidden > 0) print "  ... +" hidden " more (run with --dir " cur ")" }
+  ' "$tmp.sym"
+} > "$out"
+
+lines=$(wc -l < "$out" | tr -d ' ')
+if [ "$lines" -gt "$max" ]; then
+  head -n "$max" "$out"
+  echo "# ... truncated at $max of $lines lines: narrow with --dir, --ext or --exclude"
+else
+  cat "$out"
+fi

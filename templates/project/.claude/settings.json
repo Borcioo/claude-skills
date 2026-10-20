@@ -1,0 +1,39 @@
+{
+  "extraKnownMarketplaces": {
+    "borcioo-skills": {
+      "source": { "source": "github", "repo": "Borcioo/claude-skills" }
+    }
+  },
+  "enabledPlugins": {
+    "superpowers@borcioo-skills": true,
+    "code-review@borcioo-skills": true,
+    "commit-commands@borcioo-skills": true,
+    "claude-md-management@claude-plugins-official": true
+  },
+  "sandbox": {
+    "enabled": true,
+    "credentials": {
+      "files": [
+        { "path": "~/.aws/credentials", "mode": "deny" },
+        { "path": "~/.ssh", "mode": "deny" }
+      ],
+      "envVars": [
+        { "name": "GITHUB_TOKEN", "mode": "deny" },
+        { "name": "NPM_TOKEN", "mode": "deny" }
+      ]
+    }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-files.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

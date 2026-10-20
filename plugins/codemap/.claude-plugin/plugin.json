@@ -1,0 +1,11 @@
+{
+  "name": "codemap",
+  "version": "0.1.0",
+  "description": "EXPERIMENTAL: one-call map of project files by extension, grouped by directory, optionally with classes/functions/exports per file. Keep only if an A/B test shows a gain.",
+  "author": {
+    "name": "Borcioo"
+  },
+  "repository": "https://github.com/Borcioo/claude-skills",
+  "license": "MIT",
+  "keywords": ["files", "index", "symbols", "navigation", "subagents"]
+}
