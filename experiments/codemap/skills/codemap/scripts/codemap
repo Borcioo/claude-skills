@@ -164,19 +164,21 @@ fi
 dirs=$(awk -F'\t' '{ d = $1; if (d ~ /\//) sub(/\/[^\/]*$/, "", d); else d = "."; print d }' "$tmp.sym" | LC_ALL=C sort -u | wc -l | tr -d ' ')
 {
   echo "# codemap: $total files in $dirs dirs (dir: $dir, ext: ${exts:-any}, via $source_tool)"
-  awk -F'\t' -v per_dir=50 '
+  # sort by directory, then name, so each directory forms one group
+  awk -F'\t' '{ d = $1; b = $1; if (d ~ /\//) { sub(/\/[^\/]*$/, "", d); sub(/^.*\//, "", b) } else d = "."; print d "\t" b "\t" $2 }' "$tmp.sym" \
+    | LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2 \
+    | awk -F'\t' -v per_dir=50 '
     {
-      path = $1; d = path; base = path
-      if (d ~ /\//) { sub(/\/[^\/]*$/, "", d); sub(/^.*\//, "", base) } else d = "."
+      d = $1; base = $2; syms = $3
       if (d != cur) {
         if (hidden > 0) print "  ... +" hidden " more (run with --dir " cur ")"
         cur = d; shown = 0; hidden = 0
         print d "/"
       }
-      if (shown < per_dir) { print "  " base ($2 != "" ? ": " $2 : ""); shown++ } else hidden++
+      if (shown < per_dir) { print "  " base (syms != "" ? ": " syms : ""); shown++ } else hidden++
     }
     END { if (hidden > 0) print "  ... +" hidden " more (run with --dir " cur ")" }
-  ' "$tmp.sym"
+  '
 } > "$out"
 
 lines=$(wc -l < "$out" | tr -d ' ')

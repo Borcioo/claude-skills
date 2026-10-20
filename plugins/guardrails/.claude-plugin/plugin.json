@@ -1,0 +1,11 @@
+{
+  "name": "guardrails",
+  "version": "0.1.0",
+  "description": "Deterministic PreToolUse guard: blocks edits and shell writes to secrets (.env), lockfiles, .git/ and CI workflows; with CLAUDE_PROTECT_TESTS=1 also to tests (for unattended runs).",
+  "author": {
+    "name": "Borcioo"
+  },
+  "repository": "https://github.com/Borcioo/claude-skills",
+  "license": "MIT",
+  "keywords": ["hooks", "guardrails", "security", "tests"]
+}
