@@ -1,24 +1,38 @@
 {
   "extraKnownMarketplaces": {
     "borcioo-skills": {
-      "source": { "source": "github", "repo": "Borcioo/claude-skills" }
+      "source": {
+        "source": "github",
+        "repo": "Borcioo/claude-skills"
+      }
     }
   },
   "enabledPlugins": {
     "superpowers@borcioo-skills": true,
-    "guardrails@borcioo-skills": true,
-    "context7@borcioo-skills": true
+    "guardrails@borcioo-skills": true
   },
   "sandbox": {
     "enabled": true,
     "credentials": {
       "files": [
-        { "path": "~/.aws/credentials", "mode": "deny" },
-        { "path": "~/.ssh", "mode": "deny" }
+        {
+          "path": "~/.aws/credentials",
+          "mode": "deny"
+        },
+        {
+          "path": "~/.ssh",
+          "mode": "deny"
+        }
       ],
       "envVars": [
-        { "name": "GITHUB_TOKEN", "mode": "deny" },
-        { "name": "NPM_TOKEN", "mode": "deny" }
+        {
+          "name": "GITHUB_TOKEN",
+          "mode": "deny"
+        },
+        {
+          "name": "NPM_TOKEN",
+          "mode": "deny"
+        }
       ]
     }
   }

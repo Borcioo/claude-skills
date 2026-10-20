@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "borcioo-skills",
-  "description": "Minimalny zestaw na co dzień: superpowers + LSP + Context7 + guardrails (research 2026-10). Zewnętrzne źródła przypięte po SHA.",
+  "description": "Minimalny zestaw: superpowers + guardrails; opcjonalnie LSP (TS, PHP) i Context7. Zewnętrzne źródła przypięte po SHA. Decyzje i testy A/B w README.",
   "owner": {
     "name": "Borcioo"
   },
@@ -31,7 +31,7 @@
         "path": "plugins/typescript-lsp",
         "sha": "a0b04d9ddccaabe1976645f68b0eda50f74e7022"
       },
-      "category": "lsp",
+      "category": "optional",
       "strict": false,
       "lspServers": {
         "typescript": {
@@ -66,7 +66,7 @@
         "path": "plugins/php-lsp",
         "sha": "a0b04d9ddccaabe1976645f68b0eda50f74e7022"
       },
-      "category": "lsp",
+      "category": "optional",
       "strict": false,
       "lspServers": {
         "intelephense": {
@@ -86,7 +86,7 @@
       "author": {
         "name": "Upstash"
       },
-      "category": "core",
+      "category": "optional",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/anthropics/claude-plugins-official.git",
